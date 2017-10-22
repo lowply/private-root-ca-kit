@@ -119,14 +119,14 @@ Move back to the workdir and create a directory for the FQDN
 
 ```
 $ cd ..
-$ mkdir example.localhost
-$ cd example.localhost
+$ mkdir domains/example.localhost
+$ cd domains/example.localhost
 ```
 
 Generate the *server-req.cnf.patch* file by replacing the FQDNs in the `alt_names` section of the *server-req.cnf.patch.template* file.
 
 ```
-$ cat ../patch/server-req.cnf.patch.template | sed -e 's/example.com/example.localhost/g' > server-req.cnf.patch
+$ cat ../../patch/server-req.cnf.patch.template | sed -e 's/example.com/example.localhost/g' > server-req.cnf.patch
 ```
 
 Copy the *openssl.cnf* file and apply the patch
@@ -139,7 +139,7 @@ $ patch -u server-req.cnf < server-req.cnf.patch
 Create a server certificate request
 
 ```
-$ SSLEAY_CONFIG="-config server-req.cnf" ../CA.sh -newreq
+$ SSLEAY_CONFIG="-config server-req.cnf" ../../CA.sh -newreq
 ```
 
 Check the request
@@ -160,7 +160,7 @@ Check the `X509v3 Subject Alternative Name` field:
 Generate the *sign-server-cert.cnf.patch* file by replacing the FQDNs in the `alt_names` section of the *sign-server-cert.cnf.patch.template* file.
 
 ```
-$ cat ../patch/sign-server-cert.cnf.patch.template | sed -e 's/example.com/example.localhost/g' > sign-server-cert.cnf.patch
+$ cat ../../patch/sign-server-cert.cnf.patch.template | sed -e 's/example.com/example.localhost/g' > sign-server-cert.cnf.patch
 ```
 
 Copy the *openssl.cnf* file and apply the patch
@@ -173,7 +173,7 @@ $ patch -u sign-server-cert.cnf < sign-server-cert.cnf.patch
 Sign the server certificate request by the intermediate CA
 
 ```
-$ SSLEAY_CONFIG="-config sign-server-cert.cnf" ../CA.sh -sign
+$ SSLEAY_CONFIG="-config sign-server-cert.cnf" ../../CA.sh -sign
 ```
 
 Check the certificate
@@ -203,7 +203,7 @@ Create a certificate chain:
 ```
 $ mkdir $(date +%y%m%d)
 $ openssl x509 -in newcert.pem > $(date +%y%m%d)/cert.pem
-$ openssl x509 -in ../intermediateCA/cacert.pem >> $(date +%y%m%d)/cert.pem
+$ openssl x509 -in ../../intermediateCA/cacert.pem >> $(date +%y%m%d)/cert.pem
 ```
 
 Remove passphrase from private key and rename it:
@@ -226,7 +226,7 @@ Install the cert and key.
 Lastly, confirm the SSL connection with the `openssl` command.
 
 ```
-$ openssl s_client -connect example.localhost:443 -verify 0 -CAfile ../demoCA/cacert.pem
+$ openssl s_client -connect example.localhost:443 -verify 0 -CAfile ../../demoCA/cacert.pem
 verify depth is 0
 CONNECTED(00000003)
 depth=2 /C=JP/ST=Tokyo/O=Fixture/CN=Fixture Root CA

@@ -1,4 +1,5 @@
 CA.sh
-demoCA
-intermediateCA
+demoCA/*
+intermediateCA/*
+domains/*
 !.keep
