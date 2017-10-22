@@ -1,0 +1,42 @@
+--- server-req.cnf.org	2017-08-18 10:45:36.000000000 +0900
++++ server-req.cnf	2017-10-22 23:42:02.000000000 +0900
+@@ -39,7 +39,7 @@ default_ca	= CA_default		# The default c
+ ####################################################################
+ [ CA_default ]
+ 
+-dir		= ./demoCA		# Where everything is kept
++dir		= ../demoCA		# Where everything is kept
+ certs		= $dir/certs		# Where the issued certs are kept
+ crl_dir		= $dir/crl		# Where the issued crl are kept
+ database	= $dir/index.txt	# database index file.
+@@ -107,7 +107,7 @@ default_bits		= 2048
+ default_keyfile 	= privkey.pem
+ distinguished_name	= req_distinguished_name
+ attributes		= req_attributes
+-x509_extensions	= v3_ca	# The extentions to add to the self signed cert
++# x509_extensions	= v3_ca	# The extentions to add to the self signed cert
+ 
+ # Passwords for private keys if not present they will be prompted for
+ # input_password = secret
+@@ -122,7 +122,7 @@ x509_extensions	= v3_ca	# The extentions
+ # WARNING: ancient versions of Netscape crash on BMPStrings or UTF8Strings.
+ string_mask = utf8only
+ 
+-# req_extensions = v3_req # The extensions to add to a certificate request
++req_extensions = v3_req # The extensions to add to a certificate request
+ 
+ [ req_distinguished_name ]
+ countryName			= Country Name (2 letter code)
+@@ -221,6 +221,12 @@ authorityKeyIdentifier=keyid,issuer
+ basicConstraints = CA:FALSE
+ keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+ 
++subjectAltName = @alt_names
++
++[ alt_names ]
++DNS.1 = *.example.com
++DNS.1 = example.com
++
+ [ v3_ca ]
+ 
+ 
