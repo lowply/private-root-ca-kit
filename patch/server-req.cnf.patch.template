@@ -35,7 +35,7 @@
 +
 +[ alt_names ]
 +DNS.1 = *.example.com
-+DNS.1 = example.com
++DNS.2 = example.com
 +
  [ v3_ca ]
  
