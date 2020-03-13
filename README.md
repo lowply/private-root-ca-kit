@@ -1,6 +1,6 @@
 # Private Root CA Kit
 
-A tool kit to build your private root CA on macOS.
+A toolkit to build your own private root CA and create a self-signed certificate signed by the CA.
 
 Creating a self-signed certificate signed by a private authority is tricky, but it's useful when you're running local dev server with SSL/TLS. This article will go through the process of generating, signing and installing a self-signed certificate using a private authority on macOS.
 
@@ -13,48 +13,49 @@ In this example, certificate chain will be:
 And each certificate has:
 
 ```
-Root CA:            Subject: C=JP, ST=Tokyo, L=Shibuya, O=Fixture, CN=Fixture Root CA
-Intermediate CA:    Subject: C=JP, ST=Tokyo, L=Shibuya, O=Fixture, CN=Fixture Intermediate CA
-Server Certificate: Subject: C=JP, ST=Tokyo, L=Shibuya, O=Fixture, CN=example.localhost
+Root CA:            Subject: C=JP, ST=Tokyo, O=Fixture, CN=Fixture Root CA
+Intermediate CA:    Subject: C=JP, ST=Tokyo, O=Fixture, CN=Fixture Intermediate CA
+Server Certificate: Subject: C=JP, ST=Tokyo, O=Fixture, CN=${FQDN}
 ```
 
-Please replace `example.localhost` to the hostname of your GitHub Enterprise instance.
+Please replace `${FQDN}` to the hostname of your server.
 
-## Step 0 - Install and prep
+## Step 0 - Prep
 
-macOS High Sierra switched to LibreSSL
-
-```
-/usr/bin/openssl version
-LibreSSL 2.2.7
-```
-
-But we'd like to use OpenSSL. Let's install OpenSSL via Homebrew and alias to it:
+Install Docker, clone this repository, cd to it and run:
 
 ```
-brew install openssl
-/usr/local/opt/openssl/bin/openssl version
-OpenSSL 1.0.2l  25 May 2017
-alias openssl="/usr/local/opt/openssl/bin/openssl"
+export FQDN="your.example.com"
+./script/build.sh
+./script/run.sh
 ```
 
-Prepare *CA.sh* script:
+This will create a docker container that has
 
-```
-cp -a /usr/local/etc/openssl/misc/CA.sh .
-export OPENSSL="/usr/local/opt/openssl/bin/openssl"
-```
+- The `openssl` command and the CA.pl script
+- The *openssl.cnf* file with a patch applied with SANs of your FQDN
+
+and run it.
 
 ## Step 1 - Create a private authority
 
-In this repository, create a new private authority:
+You're in the container. Let's get started by creating a new private authority:
 
 ```
-./CA.sh -newca
+CA.pl -newca
 ```
 
-- Enter `PEM pass phrase`, `Country Name`, `State or Province Name`, `Locality Name` and `Common Name`
-- `Organizational Unit Name` and `Email Address` can be empty
+- Enter to proceed
+- `PEM pass phrase = [passphrase]`, 
+- `Country Name = JP`
+- `State or Province Name = Tokyo`
+- `Locality Name = [empty]`
+- `Organization Name = Fixture Root CA`
+- `Organizational Unit Name = [empty]`
+- `Common Name = Fixture Root CA`
+- `Email Address = [empty]`
+- `A challenge password = [empty]`
+- `An optional company name = [empty]`
 
 Check the certificate:
 
@@ -71,13 +72,13 @@ Next, create an intermediate CA certificate.
 
 ```
 cd intermediateCA
-../CA.sh -newreq
+CA.pl -newreq
 ```
 
 - `PEM pass phrase = [password]`
 - `Country Name = JP`
 - `State or Province Name = Tokyo`, 
-- `Locality Name = Shibuya`, 
+- `Locality Name = [empty]`, 
 - `Organization Name = Fixture Intermediate CA`
 - `Organizational Unit Name = [empty]`
 - `Common Name = Fixture Intermediate CA`
@@ -90,17 +91,10 @@ Check the request
 openssl req -in ./newreq.pem -text
 ```
 
-Copy the *openssl.cnf* file and apply *sign-intermediate-ca.cnf.patch*
-
-```
-cp -a /usr/local/etc/openssl/openssl.cnf ./sign-intermediate-ca.cnf
-patch -u sign-intermediate-ca.cnf < ../patch/sign-intermediate-ca.cnf.patch
-```
-
 Sign the intermediate certificate request by the root CA
 
 ```
-SSLEAY_CONFIG="-config sign-intermediate-ca.cnf" ../CA.sh -signCA
+CA.pl -signCA
 ```
 
 If it fails, truncate the *index.txt* file of the root CA and try again.
@@ -133,35 +127,21 @@ echo 00 > serial
 Move back to the workdir and create a directory for the FQDN
 
 ```
-export DOMAIN="example.localhost"
 cd ..
-mkdir domains/${DOMAIN}
-cd domains/${DOMAIN}
+mkdir domains/${FQDN}
+cd domains/${FQDN}
 ```
 
-Generate the *server-req.cnf.patch* file by replacing the FQDNs in the `alt_names` section of the *server-req.cnf.patch.template* file.
+Create a server certificate request.
 
 ```
-cat ../../patch/server-req.cnf.patch.template | sed -e "s/example.com/${DOMAIN}/g" > server-req.cnf.patch
-```
-
-Copy the *openssl.cnf* file and apply the patch
-
-```
-cp -a /usr/local/etc/openssl/openssl.cnf ./server-req.cnf
-patch -u server-req.cnf < server-req.cnf.patch
-```
-
-Create a server certificate request. If your console gets weird when typing passphrase, disable your `~/.bashrc` and try again.
-
-```
-SSLEAY_CONFIG="-config server-req.cnf" ../../CA.sh -newreq
+CA.pl -newreq
 ```
 
 - `PEM pass phrase = [password]`
 - `Country Name = JP`
 - `State or Province Name = Tokyo`, 
-- `Locality Name = Shibuya`, 
+- `Locality Name = [empty]`, 
 - `Organization Name = Fixture`
 - `Organizational Unit Name = [empty]`
 - `Common Name = ghe.fixture.jp`
@@ -176,30 +156,17 @@ openssl req -in ./newreq.pem -text
 
 Check the `X509v3 Subject Alternative Name` field:
 
-- Make sure you have the wildcard (`*.${DOMAIN}`) in the `X509v3 Subject Alternative Name` field.
-- If you are using Google Chrome, make sure you have the FQDN (`${DOMAIN}`) in the `X509v3 Subject Alternative Name` field
+- Make sure you have the wildcard (`*.${FQDN}`) in the `X509v3 Subject Alternative Name` field.
+- If you are using Google Chrome, make sure you have the FQDN (`${FQDN}`) in the `X509v3 Subject Alternative Name` field
   - Otherwise you'll see the `ERR_CERT_COMMON_NAME_INVALID` error
   - More info: [Support for commonName matching in Certificates (removed)](https://www.chromestatus.com/feature/4981025180483584)
 
 ## Step 4 - Sign the server certificate request by the intermediate CA
 
-Generate the *sign-server-cert.cnf.patch* file by replacing the FQDNs in the `alt_names` section of the *sign-server-cert.cnf.patch.template* file.
-
-```
-cat ../../patch/sign-server-cert.cnf.patch.template | sed -e "s/example.com/${DOMAIN}/g" > sign-server-cert.cnf.patch
-```
-
-Copy the *openssl.cnf* file and apply the patch
-
-```
-cp -a /usr/local/etc/openssl/openssl.cnf ./sign-server-cert.cnf
-patch -u sign-server-cert.cnf < sign-server-cert.cnf.patch
-```
-
 Sign the server certificate request by the intermediate CA
 
 ```
-SSLEAY_CONFIG="-config sign-server-cert.cnf" ../../CA.sh -sign
+CA.pl -sign
 ```
 
 If it fails, truncate the *index.txt* file of the intermediate CA and try again.
@@ -216,19 +183,7 @@ openssl x509 -in ./newcert.pem -text
 
 This Issuer should be the intermediate CA and it should have `X509v3 Subject Alternative Name` field.
 
-## Step 5 - Install the root certificate to your Keychain (if you haven't done yet)
-
-Next, let's install the root certificate to your macOS's Keychain app.
-
-1. Add the certificate to Keychain by double clicking `demoCA/cacert.pem` file
-1. Add it to the "System" keychain
-1. In the Keychain, select the certificate
-1. Right click -> Get Info
-1. Change to "Always Trust"
-
-Note that Firefox doesn't use Keychain so you have to add the root certificate manually if you're using Firefox.
-
-## Step 6 - Install the server certificate to your dev server
+## Step 5 - Prepare server certificate and private key
 
 Create a certificate chain:
 
@@ -251,11 +206,42 @@ Verify the certificate and private key:
 [ "$(openssl rsa -pubout -in key.pem 2> /dev/null)" = "$(openssl x509 -pubkey -in cert.pem -noout)" ] && echo "OK" || echo "Verification Failed"
 ```
 
-If you're using GitHub Enterprise Server, run install.sh to install the cert and key.
+Done, now let's exit from the container.
 
 ```
-cd ../../
-./install.sh ${DOMAIN} password
+exit
+```
+
+## Step 6 - Install the root certificate to your Keychain (if you haven't done yet)
+
+Next, let's install the root certificate to your macOS's Keychain app.
+
+1. Add the certificate to Keychain by double clicking `demoCA/cacert.pem` file
+1. Add it to the "System" keychain
+1. In the Keychain, select the certificate
+1. Right click -> Get Info
+1. Change to "Always Trust"
+
+Note that Firefox doesn't use Keychain so you have to add the root certificate manually if you're using Firefox.
+
+### GitHub Enterprise Server
+
+If you're using GitHub Enterprise Server, run the following:
+
+```
+./script/add_root [hostname]
+```
+
+## Step 7 - Install the server certificate
+
+Use the `domains/${FQDN}/cert.pem` and `domains/${FQDN}/key.pem` files.
+
+### GitHub Enterprise Server
+
+Run the following:
+
+```
+./script/ghes-install.sh example.com password
 ```
 
 ## Step 7 - Confirm SSL connection
@@ -263,71 +249,7 @@ cd ../../
 Lastly, confirm the SSL connection with the `openssl` command.
 
 ```
-openssl s_client -connect ${DOMAIN}:443 -verify 0 -CAfile ./demoCA/cacert.pem
-verify depth is 0
-CONNECTED(00000003)
-depth=2 /C=JP/ST=Tokyo/O=Fixture/CN=Fixture Root CA
-verify return:1
-depth=1 /C=JP/ST=Tokyo/L=Shibuya/O=Fixture/CN=Fixture Intermediate CA
-verify return:1
-depth=0 /C=JP/ST=Tokyo/L=Shibuya/O=Fixture/CN=${DOMAIN}
-verify return:1
----
-Certificate chain
- 0 s:/C=JP/ST=Tokyo/L=Shibuya/O=Fixture/CN=${DOMAIN}
-   i:/C=JP/ST=Tokyo/L=Shibuya/O=Fixture/CN=Fixture Intermediate CA
- 1 s:/C=JP/ST=Tokyo/L=Shibuya/O=Fixture/CN=Fixture Intermediate CA
-   i:/C=JP/ST=Tokyo/O=Fixture/CN=Fixture Root CA
----
-Server certificate
------BEGIN CERTIFICATE-----
-MIIERDCCAyygAwIBAgIBADANBgkqhkiG9w0BAQsFADBjMQswCQYDVQQGEwJKUDEO
-MAwGA1UECAwFVG9reW8xEDAOBgNVBAcMB1NoaWJ1eWExEDAOBgNVBAoMB0ZpeHR1
-cmUxIDAeBgNVBAMMF0ZpeHR1cmUgSW50ZXJtZWRpYXRlIENBMB4XDTE3MDcyNTE3
-NDIxMFoXDTE4MDcyNTE3NDIxMFowcDELMAkGA1UEBhMCSlAxDjAMBgNVBAgMBVRv
-a3lvMRAwDgYDVQQHDAdTaGlidXlhMSEwHwYDVQQKDBhJbnRlcm5ldCBXaWRnaXRz
-IFB0eSBMdGQxHDAaBgNVBAMME2xvd3BseS5naGUtdGVzdC5uZXQwggEiMA0GCSqG
-SIb3DQEBAQUAA4IBDwAwggEKAoIBAQDQQh1WZqbpsPdmOOgPGKIGTYpPakTPNYIO
-l8+HvcZR21iGToHfZMmcgLriqT49OFLG7z6uToedbaLP9vktSerjYWVs/GEg1WOo
-GA73VpOeR7+w2+p/1q3u4IgCPY+4GLobOX21dr4LmEiifF8B32PB2+hmeUUrYHRs
-+j5hwkpE/q9fujv8ZKFHvLCSrjdSq/nT+t9lbo+mcQVp8crdZhflI5Koh5Xc0qY4
-HSFALcBU6wQTRK4IhyC1Y0qxAYnskjLkNds1kKoYyqxGJmRV0gA7QJmQ60M/Z988
-IIQwws+S8qtCJMorcAydcB7qShxI3hH67OdQZPkMpMaY/7pZQW2TAgMBAAGjgfUw
-gfIwDAYDVR0TAQH/BAIwADARBglghkgBhvhCAQEEBAMCBkAwCwYDVR0PBAQDAgXg
-MB0GA1UdJQQWMBQGCCsGAQUFBwMBBggrBgEFBQcDAjA1BgNVHREELjAsghUqLmxv
-d3BseS5naGUtdGVzdC5uZXSCE2xvd3BseS5naGUtdGVzdC5uZXQwLAYJYIZIAYb4
-QgENBB8WHU9wZW5TU0wgR2VuZXJhdGVkIENlcnRpZmljYXRlMB0GA1UdDgQWBBTD
-GtgIhi+UVVPvBdn3KVUjo3s98TAfBgNVHSMEGDAWgBTr0L6eyBvhkF4WLG19m7zp
-BJfgVDANBgkqhkiG9w0BAQsFAAOCAQEAT4zzu5BtA8nHCaVdhSeosBP6WGc24IMz
-sJh3AMjqyTOOq0Le3tuzuvyLAmlKTOv0W3Hwt53ezALDZkZ+7lWSpz6Lx0dD8+xA
-iS+GxCdKdOXJLBuxkKzfMtct5dbm9e5wL1pstEL7UOpGugjYQdkgoR92mbqfGcPc
-AXVJkHeHllYMbxs/CvKLQmhS/FH280Apbl2SKmEGca6VAa0xRJbktLvkBDvkgmFO
-1AB2Skj46fQxJXzsWQYKf4SYOXBlkWKIlP+bvc9hqh9DGoyJxbRyUtruLtTCY3Ej
-ZxA7FnSInoyH+8ezG7/Cz9X+DOtI6G7RNpqqksWsYnnmww8qNvZZQQ==
------END CERTIFICATE-----
-subject=/C=JP/ST=Tokyo/L=Shibuya/O=Fixture/CN=${DOMAIN}
-issuer=/C=JP/ST=Tokyo/L=Shibuya/O=Fixture/CN=Fixture Intermediate CA
----
-No client certificate CA names sent
----
-SSL handshake has read 2202 bytes and written 456 bytes
----
-New, TLSv1/SSLv3, Cipher is AES128-SHA
-Server public key is 2048 bit
-Secure Renegotiation IS supported
-Compression: NONE
-Expansion: NONE
-SSL-Session:
-    Protocol  : TLSv1
-    Cipher    : AES128-SHA
-    Session-ID: ECA6E3705FE81BDA70741E6149DC51C043286BC0DC8E3EEA8D9D864C531D6B43
-    Session-ID-ctx:
-    Master-Key: 9B43DDA76EDDF479AF94BA3908F5F1117F93083D835F9D699F6EC64359995F35D9952333B3FCD417C129A69D35C3A042
-    Key-Arg   : None
-    Start Time: 1501121486
-    Timeout   : 300 (sec)
-    Verify return code: 0 (ok)
----
+openssl s_client -connect ${FQDN}:443 -verify 0 -CAfile ./demoCA/cacert.pem
 ```
 
 Done!

@@ -1,0 +1,88 @@
+--- /etc/ssl/openssl.cnf
++++ openssl.cnf
+@@ -42,7 +42,7 @@
+ ####################################################################
+ [ CA_default ]
+ 
+-dir		= ./demoCA		# Where everything is kept
++dir		= /home/demoCA		# Where everything is kept
+ certs		= $dir/certs		# Where the issued certs are kept
+ crl_dir		= $dir/crl		# Where the issued crl are kept
+ database	= $dir/index.txt	# database index file.
+@@ -109,7 +109,7 @@
+ default_keyfile 	= privkey.pem
+ distinguished_name	= req_distinguished_name
+ attributes		= req_attributes
+-x509_extensions	= v3_ca	# The extensions to add to the self signed cert
++# x509_extensions	= v3_ca	# The extensions to add to the self signed cert
+ 
+ # Passwords for private keys if not present they will be prompted for
+ # input_password = secret
+@@ -124,7 +124,7 @@
+ # WARNING: ancient versions of Netscape crash on BMPStrings or UTF8Strings.
+ string_mask = utf8only
+ 
+-# req_extensions = v3_req # The extensions to add to a certificate request
++req_extensions = v3_req # The extensions to add to a certificate request
+ 
+ [ req_distinguished_name ]
+ countryName			= Country Name (2 letter code)
+@@ -169,13 +169,13 @@
+ # This goes against PKIX guidelines but some CAs do it and some software
+ # requires this to avoid interpreting an end user certificate as a CA.
+ 
+-basicConstraints=CA:FALSE
++basicConstraints=critical, CA:FALSE
+ 
+ # Here are some examples of the usage of nsCertType. If it is omitted
+ # the certificate can be used for anything *except* object signing.
+ 
+ # This is OK for an SSL server.
+-# nsCertType			= server
++nsCertType			= server
+ 
+ # For an object signing certificate this would be used.
+ # nsCertType = objsign
+@@ -187,8 +187,11 @@
+ # nsCertType = client, email, objsign
+ 
+ # This is typical in keyUsage for a client certificate.
+-# keyUsage = nonRepudiation, digitalSignature, keyEncipherment
++keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+ 
++extendedKeyUsage = serverAuth, clientAuth
++subjectAltName = @alt_names
++
+ # This will be displayed in Netscape's comment listbox.
+ nsComment			= "OpenSSL Generated Certificate"
+ 
+@@ -223,6 +226,8 @@
+ basicConstraints = CA:FALSE
+ keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+ 
++subjectAltName = @alt_names
++
+ [ v3_ca ]
+ 
+ 
+@@ -240,10 +245,10 @@
+ # Key usage: this is typical for a CA certificate. However since it will
+ # prevent it being used as an test self-signed certificate it is best
+ # left out by default.
+-# keyUsage = cRLSign, keyCertSign
++keyUsage = cRLSign, keyCertSign
+ 
+ # Some might want this also
+-# nsCertType = sslCA, emailCA
++nsCertType = sslCA, emailCA
+ 
+ # Include email address in subject alt name: another PKIX recommendation
+ # subjectAltName=email:copy
+@@ -348,3 +353,7 @@
+ 				# (optional, default: no)
+ ess_cert_id_alg		= sha1	# algorithm to compute certificate
+ 				# identifier (optional, default: sha1)
++
++[ alt_names ]
++DNS.1 = *.domain.example.com
++DNS.2 = domain.example.com
