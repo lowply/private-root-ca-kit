@@ -25,41 +25,41 @@ Please replace `example.localhost` to the hostname of your GitHub Enterprise ins
 macOS High Sierra switched to LibreSSL
 
 ```
-$ /usr/bin/openssl version
+/usr/bin/openssl version
 LibreSSL 2.2.7
 ```
 
 But we'd like to use OpenSSL. Let's install OpenSSL via Homebrew and alias to it:
 
 ```
-$ brew install openssl
-$ /usr/local/opt/openssl/bin/openssl version
+brew install openssl
+/usr/local/opt/openssl/bin/openssl version
 OpenSSL 1.0.2l  25 May 2017
-$ alias openssl="/usr/local/opt/openssl/bin/openssl"
+alias openssl="/usr/local/opt/openssl/bin/openssl"
 ```
 
-Prepare *CA.sh* script
+Prepare *CA.sh* script:
 
 ```
 cp -a /usr/local/etc/openssl/misc/CA.sh .
-/usr/local/bin/gsed -i 's|OPENSSL=openssl|OPENSSL="/usr/local/opt/openssl/bin/openssl"|' CA.sh
+export OPENSSL="/usr/local/opt/openssl/bin/openssl"
 ```
 
 ## Step 1 - Create a private authority
 
-In this repository, create a new private authority.
+In this repository, create a new private authority:
 
 ```
-$ ./CA.sh -newca
+./CA.sh -newca
 ```
 
 - Enter `PEM pass phrase`, `Country Name`, `State or Province Name`, `Locality Name` and `Common Name`
 - `Organizational Unit Name` and `Email Address` can be empty
 
-Check the certificate
+Check the certificate:
 
 ```
-$ openssl x509 -in ./demoCA/cacert.pem -text
+openssl x509 -in ./demoCA/cacert.pem -text
 ```
 
 - Issuer and Subject should be identical
@@ -70,47 +70,62 @@ $ openssl x509 -in ./demoCA/cacert.pem -text
 Next, create an intermediate CA certificate.
 
 ```
-$ cd intermediateCA
-$ ../CA.sh -newreq
+cd intermediateCA
+../CA.sh -newreq
 ```
 
-- Enter `PEM pass phrase`, `Country Name`, `State or Province Name`, `Locality Name` and `Common Name`
-- `Organizational Unit Name` and `Email Address` can be empty
+- `PEM pass phrase = [password]`
+- `Country Name = JP`
+- `State or Province Name = Tokyo`, 
+- `Locality Name = Shibuya`, 
+- `Organization Name = Fixture Intermediate CA`
+- `Organizational Unit Name = [empty]`
+- `Common Name = Fixture Intermediate CA`
+- `Email Address = [empty]`
+- `A challenge password = [empty]`
 
 Check the request
 
 ```
-$ openssl req -in ./newreq.pem -text
+openssl req -in ./newreq.pem -text
 ```
 
 Copy the *openssl.cnf* file and apply *sign-intermediate-ca.cnf.patch*
 
 ```
-$ cp -a /usr/local/etc/openssl/openssl.cnf ./sign-intermediate-ca.cnf
-$ patch -u sign-intermediate-ca.cnf < ../patch/sign-intermediate-ca.cnf.patch
+cp -a /usr/local/etc/openssl/openssl.cnf ./sign-intermediate-ca.cnf
+patch -u sign-intermediate-ca.cnf < ../patch/sign-intermediate-ca.cnf.patch
 ```
 
 Sign the intermediate certificate request by the root CA
 
 ```
-$ SSLEAY_CONFIG="-config sign-intermediate-ca.cnf" ../CA.sh -signCA
+SSLEAY_CONFIG="-config sign-intermediate-ca.cnf" ../CA.sh -signCA
+```
+
+If it fails, truncate the *index.txt* file of the root CA and try again.
+
+```
+truncate -s0 ../../demoCA/index.txt
 ```
 
 Check the certificate
 
 ```
-$ openssl x509 -in ./newcert.pem -text
+openssl x509 -in ./newcert.pem -text
 ```
+
+Make sure that the `Signature Algorithm` is `sha256WithRSAEncryption`.
 
 Reorganize the intermediate CA directory so that it can sign a server certificate in the next step.
 
 ```
-$ mkdir private
-$ mv newkey.pem private/cakey.pem
-$ mv newcert.pem cacert.pem
-$ mkdir newcerts
-$ touch index.txt
-$ echo 00 > serial
+mkdir private
+mv newkey.pem private/cakey.pem
+mv newcert.pem cacert.pem
+mkdir newcerts
+touch index.txt
+echo 00 > serial
 ```
 
 ## Step 3 - Create a server certificte
@@ -118,40 +133,51 @@ $ echo 00 > serial
 Move back to the workdir and create a directory for the FQDN
 
 ```
-$ cd ..
-$ mkdir domains/example.localhost
-$ cd domains/example.localhost
+export DOMAIN="example.localhost"
+cd ..
+mkdir domains/${DOMAIN}
+cd domains/${DOMAIN}
 ```
 
 Generate the *server-req.cnf.patch* file by replacing the FQDNs in the `alt_names` section of the *server-req.cnf.patch.template* file.
 
 ```
-$ cat ../../patch/server-req.cnf.patch.template | sed -e 's/example.com/example.localhost/g' > server-req.cnf.patch
+cat ../../patch/server-req.cnf.patch.template | sed -e "s/example.com/${DOMAIN}/g" > server-req.cnf.patch
 ```
 
 Copy the *openssl.cnf* file and apply the patch
 
 ```
-$ cp -a /usr/local/etc/openssl/openssl.cnf ./server-req.cnf
-$ patch -u server-req.cnf < server-req.cnf.patch
+cp -a /usr/local/etc/openssl/openssl.cnf ./server-req.cnf
+patch -u server-req.cnf < server-req.cnf.patch
 ```
 
-Create a server certificate request
+Create a server certificate request. If your console gets weird when typing passphrase, disable your `~/.bashrc` and try again.
 
 ```
-$ SSLEAY_CONFIG="-config server-req.cnf" ../../CA.sh -newreq
+SSLEAY_CONFIG="-config server-req.cnf" ../../CA.sh -newreq
 ```
+
+- `PEM pass phrase = [password]`
+- `Country Name = JP`
+- `State or Province Name = Tokyo`, 
+- `Locality Name = Shibuya`, 
+- `Organization Name = Fixture`
+- `Organizational Unit Name = [empty]`
+- `Common Name = ghe.fixture.jp`
+- `Email Address = [empty]`
+- `A challenge password = [empty]`
 
 Check the request
 
 ```
-$ openssl req -in ./newreq.pem -text
+openssl req -in ./newreq.pem -text
 ```
 
 Check the `X509v3 Subject Alternative Name` field:
 
-- Make sure you have the wildcard (`*.example.localhost`) in the `X509v3 Subject Alternative Name` field.
-- If you are using Google Chrome, make sure you have the FQDN (`example.localhost`) in the `X509v3 Subject Alternative Name` field
+- Make sure you have the wildcard (`*.${DOMAIN}`) in the `X509v3 Subject Alternative Name` field.
+- If you are using Google Chrome, make sure you have the FQDN (`${DOMAIN}`) in the `X509v3 Subject Alternative Name` field
   - Otherwise you'll see the `ERR_CERT_COMMON_NAME_INVALID` error
   - More info: [Support for commonName matching in Certificates (removed)](https://www.chromestatus.com/feature/4981025180483584)
 
@@ -160,26 +186,32 @@ Check the `X509v3 Subject Alternative Name` field:
 Generate the *sign-server-cert.cnf.patch* file by replacing the FQDNs in the `alt_names` section of the *sign-server-cert.cnf.patch.template* file.
 
 ```
-$ cat ../../patch/sign-server-cert.cnf.patch.template | sed -e 's/example.com/example.localhost/g' > sign-server-cert.cnf.patch
+cat ../../patch/sign-server-cert.cnf.patch.template | sed -e "s/example.com/${DOMAIN}/g" > sign-server-cert.cnf.patch
 ```
 
 Copy the *openssl.cnf* file and apply the patch
 
 ```
-$ cp -a /usr/local/etc/openssl/openssl.cnf ./sign-server-cert.cnf
-$ patch -u sign-server-cert.cnf < sign-server-cert.cnf.patch
+cp -a /usr/local/etc/openssl/openssl.cnf ./sign-server-cert.cnf
+patch -u sign-server-cert.cnf < sign-server-cert.cnf.patch
 ```
 
 Sign the server certificate request by the intermediate CA
 
 ```
-$ SSLEAY_CONFIG="-config sign-server-cert.cnf" ../../CA.sh -sign
+SSLEAY_CONFIG="-config sign-server-cert.cnf" ../../CA.sh -sign
+```
+
+If it fails, truncate the *index.txt* file of the intermediate CA and try again.
+
+```
+truncate -s0 ../../intermediateCA/index.txt
 ```
 
 Check the certificate
 
 ```
-$ openssl x509 -in ./newcert.pem -text
+openssl x509 -in ./newcert.pem -text
 ```
 
 This Issuer should be the intermediate CA and it should have `X509v3 Subject Alternative Name` field.
@@ -201,43 +233,48 @@ Note that Firefox doesn't use Keychain so you have to add the root certificate m
 Create a certificate chain:
 
 ```
-$ mkdir $(date +%y%m%d)
-$ openssl x509 -in newcert.pem > $(date +%y%m%d)/cert.pem
-$ openssl x509 -in ../../intermediateCA/cacert.pem >> $(date +%y%m%d)/cert.pem
+openssl x509 -in newcert.pem > cert.pem
+openssl x509 -in ../../intermediateCA/cacert.pem >> cert.pem
 ```
 
 Remove passphrase from private key and rename it:
 
 ```
-$ openssl rsa -in newkey.pem -out $(date +%y%m%d)/key.pem
+openssl rsa -in newkey.pem -out key.pem
 ```
+
+Ref: [Removing the passphrase from your key file](https://help.github.com/en/enterprise/2.20/admin/installation/troubleshooting-ssl-errors#removing-the-passphrase-from-your-key-file)
 
 Verify the certificate and private key:
 
 ```
-$ [ "$(openssl rsa -pubout -in $(date +%y%m%d)/key.pem 2> /dev/null)" = "$(openssl x509 -pubkey -in $(date +%y%m%d)/cert.pem -noout)" ] && echo "OK" || echo "Verification Failed"
-OK
+[ "$(openssl rsa -pubout -in key.pem 2> /dev/null)" = "$(openssl x509 -pubkey -in cert.pem -noout)" ] && echo "OK" || echo "Verification Failed"
 ```
 
-Install the cert and key.
+If you're using GitHub Enterprise Server, run install.sh to install the cert and key.
+
+```
+cd ../../
+./install.sh ${DOMAIN} password
+```
 
 ## Step 7 - Confirm SSL connection
 
 Lastly, confirm the SSL connection with the `openssl` command.
 
 ```
-$ openssl s_client -connect example.localhost:443 -verify 0 -CAfile ../../demoCA/cacert.pem
+openssl s_client -connect ${DOMAIN}:443 -verify 0 -CAfile ./demoCA/cacert.pem
 verify depth is 0
 CONNECTED(00000003)
 depth=2 /C=JP/ST=Tokyo/O=Fixture/CN=Fixture Root CA
 verify return:1
 depth=1 /C=JP/ST=Tokyo/L=Shibuya/O=Fixture/CN=Fixture Intermediate CA
 verify return:1
-depth=0 /C=JP/ST=Tokyo/L=Shibuya/O=Fixture/CN=example.localhost
+depth=0 /C=JP/ST=Tokyo/L=Shibuya/O=Fixture/CN=${DOMAIN}
 verify return:1
 ---
 Certificate chain
- 0 s:/C=JP/ST=Tokyo/L=Shibuya/O=Fixture/CN=example.localhost
+ 0 s:/C=JP/ST=Tokyo/L=Shibuya/O=Fixture/CN=${DOMAIN}
    i:/C=JP/ST=Tokyo/L=Shibuya/O=Fixture/CN=Fixture Intermediate CA
  1 s:/C=JP/ST=Tokyo/L=Shibuya/O=Fixture/CN=Fixture Intermediate CA
    i:/C=JP/ST=Tokyo/O=Fixture/CN=Fixture Root CA
@@ -268,7 +305,7 @@ AXVJkHeHllYMbxs/CvKLQmhS/FH280Apbl2SKmEGca6VAa0xRJbktLvkBDvkgmFO
 1AB2Skj46fQxJXzsWQYKf4SYOXBlkWKIlP+bvc9hqh9DGoyJxbRyUtruLtTCY3Ej
 ZxA7FnSInoyH+8ezG7/Cz9X+DOtI6G7RNpqqksWsYnnmww8qNvZZQQ==
 -----END CERTIFICATE-----
-subject=/C=JP/ST=Tokyo/L=Shibuya/O=Fixture/CN=example.localhost
+subject=/C=JP/ST=Tokyo/L=Shibuya/O=Fixture/CN=${DOMAIN}
 issuer=/C=JP/ST=Tokyo/L=Shibuya/O=Fixture/CN=Fixture Intermediate CA
 ---
 No client certificate CA names sent
