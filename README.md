@@ -22,98 +22,85 @@ Please replace `${FQDN}` to the hostname of your server.
 
 ## Step 0 - Prep
 
-Install Docker, clone this repository, cd to it and run:
+Install Docker, clone this repository, cd into it and run:
 
-```
-export FQDN="your.example.com"
+```bash
 ./script/build.sh
+
+export DEFAULT_COUNTRY="JP"
+export DEFAULT_PROVINCE="Tokyo"
+export DEFAULT_ORG="Fixture"
+export FQDN="your.example.com"
 ./script/run.sh
 ```
 
-This will create a docker container that has
+This will build and run a docker container that has:
 
-- The `openssl` command and the CA.pl script
-- The *openssl.cnf* file with a patch applied with SANs of your FQDN
-
-and run it.
+- The `openssl` command and the patched CA.pl script
+- Custom OpenSSL config files in the */etc/ssl/conf.d* directory
 
 ## Step 1 - Create a private authority
 
 You're in the container. Let's get started by creating a new private authority:
 
-```
-CA.pl -newca
+```bash
+OPENSSL_CONFIG="-config /etc/ssl/conf.d/openssl-rootca.cnf" CA.pl -newca
 ```
 
-- Enter to proceed
-- `PEM pass phrase = [passphrase]`, 
-- `Country Name = JP`
-- `State or Province Name = Tokyo`
-- `Locality Name = [empty]`
-- `Organization Name = Fixture Root CA`
-- `Organizational Unit Name = [empty]`
-- `Common Name = Fixture Root CA`
-- `Email Address = [empty]`
-- `A challenge password = [empty]`
-- `An optional company name = [empty]`
+Since you have default values in the conf files, just keep hitting enter key except the common name:
+
+```bash
+Common Name (e.g. server FQDN or YOUR name) []:Fixture Root CA
+```
 
 Check the certificate:
 
-```
-openssl x509 -in ./demoCA/cacert.pem -text
+```bash
+openssl x509 -in /home/CA/cacert.pem -text
 ```
 
+- `Not After` date is ten years after the current date
 - Issuer and Subject should be identical
 - `X509v3 Basic Constraints` should be `CA:TRUE`
 
 ## Step 2 - Create an intermediate CA
 
-Next, create an intermediate CA certificate.
+Next, create an intermediate CA certificate. Don't have to set `OPENSSL_CONFIG`.
 
-```
+```bash
 cd intermediateCA
 CA.pl -newreq
 ```
 
-- `PEM pass phrase = [password]`
-- `Country Name = JP`
-- `State or Province Name = Tokyo`, 
-- `Locality Name = [empty]`, 
-- `Organization Name = Fixture Intermediate CA`
-- `Organizational Unit Name = [empty]`
-- `Common Name = Fixture Intermediate CA`
-- `Email Address = [empty]`
-- `A challenge password = [empty]`
+Again, you have default values in the conf files, so just keep hitting enter key except the common name:
+
+```bash
+Common Name (e.g. server FQDN or YOUR name) []:Fixture Intermediate CA
+```
 
 Check the request
 
-```
+```bash
 openssl req -in ./newreq.pem -text
 ```
 
 Sign the intermediate certificate request by the root CA
 
-```
-CA.pl -signCA
-```
-
-If it fails, truncate the *index.txt* file of the root CA and try again.
-
-```
-truncate -s0 ../../demoCA/index.txt
+```bash
+OPENSSL_CONFIG="-config /etc/ssl/conf.d/openssl-signca.cnf" CA.pl -signCA
 ```
 
 Check the certificate
 
-```
+```bash
 openssl x509 -in ./newcert.pem -text
 ```
 
-Make sure that the `Signature Algorithm` is `sha256WithRSAEncryption`.
+- `Not After` date is ten years after the current date
 
 Reorganize the intermediate CA directory so that it can sign a server certificate in the next step.
 
-```
+```bash
 mkdir private
 mv newkey.pem private/cakey.pem
 mv newcert.pem cacert.pem
@@ -126,31 +113,25 @@ echo 00 > serial
 
 Move back to the workdir and create a directory for the FQDN
 
-```
-cd ..
-mkdir domains/${FQDN}
-cd domains/${FQDN}
+```bash
+mkdir /home/domains/${FQDN} && cd /home/domains/${FQDN}
 ```
 
 Create a server certificate request.
 
-```
-CA.pl -newreq
+```bash
+OPENSSL_CONFIG="-config /etc/ssl/conf.d/openssl-server-req.cnf" CA.pl -newreq
 ```
 
-- `PEM pass phrase = [password]`
-- `Country Name = JP`
-- `State or Province Name = Tokyo`, 
-- `Locality Name = [empty]`, 
-- `Organization Name = Fixture`
-- `Organizational Unit Name = [empty]`
-- `Common Name = ghe.fixture.jp`
-- `Email Address = [empty]`
-- `A challenge password = [empty]`
+Again, you have default values in the conf files, so just keep hitting enter key except the common name:
+
+```bash
+Common Name (e.g. server FQDN or YOUR name) []:${FQDN}
+```
 
 Check the request
 
-```
+```bash
 openssl req -in ./newreq.pem -text
 ```
 
@@ -165,19 +146,13 @@ Check the `X509v3 Subject Alternative Name` field:
 
 Sign the server certificate request by the intermediate CA
 
-```
-CA.pl -sign
-```
-
-If it fails, truncate the *index.txt* file of the intermediate CA and try again.
-
-```
-truncate -s0 ../../intermediateCA/index.txt
+```bash
+OPENSSL_CONFIG="-config /etc/ssl/conf.d/openssl-sign.cnf" CA.pl -sign
 ```
 
 Check the certificate
 
-```
+```bash
 openssl x509 -in ./newcert.pem -text
 ```
 
@@ -187,14 +162,14 @@ This Issuer should be the intermediate CA and it should have `X509v3 Subject Alt
 
 Create a certificate chain:
 
-```
+```bash
 openssl x509 -in newcert.pem > cert.pem
 openssl x509 -in ../../intermediateCA/cacert.pem >> cert.pem
 ```
 
 Remove passphrase from private key and rename it:
 
-```
+```bash
 openssl rsa -in newkey.pem -out key.pem
 ```
 
@@ -202,13 +177,13 @@ Ref: [Removing the passphrase from your key file](https://help.github.com/en/ent
 
 Verify the certificate and private key:
 
-```
+```bash
 [ "$(openssl rsa -pubout -in key.pem 2> /dev/null)" = "$(openssl x509 -pubkey -in cert.pem -noout)" ] && echo "OK" || echo "Verification Failed"
 ```
 
 Done, now let's exit from the container.
 
-```
+```bash
 exit
 ```
 
@@ -216,11 +191,11 @@ exit
 
 Next, let's install the root certificate to your macOS's Keychain app.
 
-1. Add the certificate to Keychain by double clicking `demoCA/cacert.pem` file
-1. Add it to the "System" keychain
-1. In the Keychain, select the certificate
-1. Right click -> Get Info
-1. Change to "Always Trust"
+1. Add the certificate to Keychain by double clicking `CA/cacert.pem` file
+2. Add it to the "System" keychain
+3. In the Keychain, select the certificate
+4. Right click -> Get Info
+5. Change to "Always Trust"
 
 Note that Firefox doesn't use Keychain so you have to add the root certificate manually if you're using Firefox.
 
@@ -228,8 +203,8 @@ Note that Firefox doesn't use Keychain so you have to add the root certificate m
 
 If you're using GitHub Enterprise Server, run the following:
 
-```
-./script/add_root [hostname]
+```bash
+./script/add-root.sh [hostname]
 ```
 
 ## Step 7 - Install the server certificate
@@ -240,16 +215,22 @@ Use the `domains/${FQDN}/cert.pem` and `domains/${FQDN}/key.pem` files.
 
 Run the following:
 
-```
-./script/ghes-install.sh example.com password
+```bash
+./script/ghes-install.sh [hostname] password
 ```
 
 ## Step 7 - Confirm SSL connection
 
 Lastly, confirm the SSL connection with the `openssl` command.
 
-```
-openssl s_client -connect ${FQDN}:443 -verify 0 -CAfile ./demoCA/cacert.pem
+```bash
+openssl s_client -connect ${FQDN}:443 -verify 0 -CAfile ./CA/cacert.pem
 ```
 
 Done!
+
+---
+
+Ref:
+
+- [2 tierプライベート認証局を作る | Netsphere Laboratories](https://www.nslabs.jp/pki-making-two-tier-ca.rhtml)
